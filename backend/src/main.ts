@@ -1,33 +1,34 @@
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from './app.module';
-import helmet from 'helmet';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { join } from 'path';
+import { HealthImplementation, protoPath as healthCheckProtoPath } from 'grpc-health-check';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-
-  app.use(
-    helmet({
-      crossOriginOpenerPolicy: false,
-      contentSecurityPolicy: {
-        useDefaults: false,
-        directives: {
-          defaultSrc: ["'self'"],
-          baseUri: ["'self'"],
-          fontSrc: ["'self'", 'https: data:'],
-          formAction: ["'self'"],
-          frameAncestors: ["'self'"],
-          imgSrc: ["'self'", 'data:'],
-          objectSrc: ["'none'"],
-          scriptSrc: ["'self'"],
-          scriptSrcAttr: ["'none'"],
-          styleSrc: ["'unsafe-inline'"],
-          styleSrcElem: ["'self'", "'unsafe-inline'"],
-        },
+  const app = await NestFactory.createMicroservice<MicroserviceOptions>(AppModule, {
+    transport: Transport.GRPC,
+    options: {
+      protoPath: [
+        healthCheckProtoPath,
+        join(__dirname, 'app.proto'),
+      ],
+      url: '0.0.0.0:50051',
+      package: 'app',
+      loader: {
+        defaults: true,
       },
-    }),
-  );
+      onLoadPackageDefinition: (pkg: any, server: any) => {
+        const healthImpl = new HealthImplementation({
+          '': 'UNKNOWN',
+        });
 
-  await app.listen(3000);
+        healthImpl.addToServer(server);
+        healthImpl.setStatus('', 'SERVING');
+      },
+    },
+  });
+
+  await app.listen();
 }
-bootstrap();
+bootstrap().catch(console.error);
